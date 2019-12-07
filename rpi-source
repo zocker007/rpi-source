@@ -44,6 +44,8 @@ else:
     repo_uri = "https://github.com/Hexxeh/rpi-firmware"
 parser.add_argument("--uri", help="Github repository to use. Default is '%s'" % repo_uri,
                     default=repo_uri)
+parser.add_argument("--firmware-revision", dest="firmware_revision", help="Path to firmware revision file. Default is /boot/.firmware_revision",
+                    default="/boot/.firmware_revision")
 parser.add_argument("--delete", help="Delete downloaded archive",
                     action="store_true")
 parser.add_argument("-s", "--dry-run", help="No action; perform a simulation of events that would occur but do not actually change the system.",
@@ -228,7 +230,7 @@ def rpi_update_method(uri):
 
     info("rpi-update: %s" % uri)
 
-    with open("/boot/.firmware_revision") as f:
+    with open(args.firmware_revision) as f:
         fw_rev = f.read().strip()
     info("Firmware revision: %s" % fw_rev)
 
@@ -239,6 +241,7 @@ def rpi_update_method(uri):
 
     kernel.git_hash = download("%s/%s/git_hash" % (repo_raw, fw_rev)).strip()
     kernel.symvers = "%s/%s/Module%s.symvers" % (repo_raw, fw_rev, processor_type_suffix())
+    kernel.version = download("%s/%s/uname_string%s" % (repo_raw, fw_rev, processor_type_suffix())).strip().split()[2]
 
     if not args.default_config:
         kernel.config = proc_config_gz()
@@ -342,7 +345,7 @@ if not args.skip_gcc:
 check_bc()
 
 debianlog = "/usr/share/doc/raspberrypi-bootloader/changelog.Debian.gz"
-if os.path.exists("/boot/.firmware_revision"):
+if os.path.exists(args.firmware_revision):
     kernel = rpi_update_method(args.uri)
 elif os.path.exists(debianlog):
     kernel = debian_method(debianlog)
@@ -384,9 +387,13 @@ sh("rm -f %s" % linux_symlink)
 sh("ln -s %s %s" % (linux_dir, linux_symlink))
 
 info("Create /lib/modules/<ver>/{build,source} symlinks")
-sh("sudo rm -rf /lib/modules/$(uname -r)/build /lib/modules/$(uname -r)/source")
-sh("sudo ln -sf %s /lib/modules/$(uname -r)/build" % linux_symlink)
-sh("sudo ln -sf %s /lib/modules/$(uname -r)/source" % linux_symlink)
+sh("sudo rm -rf /lib/modules/%s/build /lib/modules/%s/source" % (kernel.version, kernel.version))
+
+if not os.path.exists("/lib/modules/%s" % kernel.version):
+    sh("sudo mkdir /lib/modules/%s" % kernel.version)
+    
+sh("sudo ln -sf %s /lib/modules/%s/build" % (linux_symlink, kernel.version))
+sh("sudo ln -sf %s /lib/modules/%s/source" % (linux_symlink, kernel.version))
 
 if args.default_config or not kernel.config:
     info(".config (generating default)")
